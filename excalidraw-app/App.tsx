@@ -90,6 +90,7 @@ import {
 import {
   FIREBASE_STORAGE_PREFIXES,
   isExcalidrawPlusSignedUser,
+  SAVE_TO_LOCAL_STORAGE_TIMEOUT,
   STORAGE_KEYS,
   SYNC_BROWSER_TABS_TIMEOUT,
 } from "./app_constants";
@@ -130,6 +131,15 @@ import {
   localStorageQuotaExceededAtom,
 } from "./data/LocalData";
 import { isBrowserStorageStateNewer } from "./data/tabSync";
+import { pagesStateAtom } from "./pages/pagesAtoms";
+import { flushPagesSave, registerPagesFlush } from "./pages/pagesAutosave";
+import {
+  getActivePage,
+  getAllPagesFileIds,
+  loadPagesState,
+  persistPagesState,
+  withPageScene,
+} from "./pages/pagesUtils";
 import { ShareDialog, shareDialogStateAtom } from "./share/ShareDialog";
 import CollabError, { collabErrorIndicatorAtom } from "./collab/CollabError";
 import { useHandleAppTheme } from "./useHandleAppTheme";
@@ -246,6 +256,20 @@ const initializeScene = async (opts: {
     }),
     appState: restoreAppState(localDataState?.appState, null),
   };
+
+  // multi-page: when no external scene is involved, boot from the active
+  // local page instead of the legacy single-scene keys
+  const pagesState = loadPagesState();
+  if (pagesState) {
+    const activePage = getActivePage(pagesState);
+    scene = {
+      elements: restoreElements(activePage.elements, null, {
+        repairBindings: true,
+        deleteInvisibleElements: true,
+      }),
+      appState: restoreAppState(activePage.appState, null),
+    };
+  }
 
   let roomLinkData = getCollaborationLinkData(window.location.href);
   const isExternalScene = !!(id || jsonBackendMatch || roomLinkData);
@@ -547,9 +571,14 @@ const ExcalidrawWrapper = () => {
               });
           }
           // on fresh load, clear unused files from IDB (from previous
-          // session)
+          // session), keeping files referenced by any page
+          const pagesState = loadPagesState();
+          const currentFileIds = new Set<FileId>([
+            ...fileIds,
+            ...getAllPagesFileIds(pagesState?.pages || []),
+          ]);
           LocalData.fileStorage.clearObsoleteFiles({
-            currentFileIds: fileIds,
+            currentFileIds: Array.from(currentFileIds),
           });
         }
       }
@@ -655,6 +684,7 @@ const ExcalidrawWrapper = () => {
 
     const onUnload = () => {
       LocalData.flushSave();
+      flushPagesSave();
     };
 
     const visibilityChange = (event: FocusEvent | Event) => {
@@ -690,6 +720,7 @@ const ExcalidrawWrapper = () => {
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
       LocalData.flushSave();
+      flushPagesSave();
 
       if (
         excalidrawAPI &&
@@ -712,6 +743,42 @@ const ExcalidrawWrapper = () => {
     };
   }, [excalidrawAPI]);
 
+  // multi-page local autosave (debounced, mirrors LocalData timing).
+  // Reads the active page from the store at fire time so concurrent page
+  // list operations (rename/add/delete) are never clobbered.
+  const persistActivePageScene = useMemo(
+    () =>
+      debounce(
+        (elements: readonly OrderedExcalidrawElement[], appState: AppState) => {
+          // don't overwrite the local page with a live collaboration scene
+          if (appJotaiStore.get(isCollaboratingAtom)) {
+            return;
+          }
+          const state = appJotaiStore.get(pagesStateAtom);
+          if (!state.pages.length) {
+            return;
+          }
+          const next = withPageScene(
+            state,
+            getActivePage(state).id,
+            elements,
+            appState,
+          );
+          appJotaiStore.set(pagesStateAtom, next);
+          if (!persistPagesState(next)) {
+            appJotaiStore.set(localStorageQuotaExceededAtom, true);
+          }
+        },
+        SAVE_TO_LOCAL_STORAGE_TIMEOUT,
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    registerPagesFlush(() => persistActivePageScene.flush());
+    return () => registerPagesFlush(null);
+  }, [persistActivePageScene]);
+
   const onChange = (
     elements: readonly OrderedExcalidrawElement[],
     appState: AppState,
@@ -720,6 +787,8 @@ const ExcalidrawWrapper = () => {
     if (collabAPI?.isCollaborating()) {
       collabAPI.syncElements(elements);
     }
+
+    persistActivePageScene(elements, appState);
 
     // this check is redundant, but since this is a hot path, it's best
     // not to evaludate the nested expression every time

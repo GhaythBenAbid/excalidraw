@@ -1,20 +1,40 @@
 import {
+  copyIcon,
   loginIcon,
   ExcalLogo,
   eyeIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { useI18n } from "@excalidraw/excalidraw/i18n";
-import { MainMenu } from "@excalidraw/excalidraw/index";
+import { MainMenu, useExcalidrawAPI } from "@excalidraw/excalidraw/index";
 import React from "react";
 
-import { isDevEnv } from "@excalidraw/common";
+import { DEFAULT_SIDEBAR, isDevEnv } from "@excalidraw/common";
 
 import type { Theme } from "@excalidraw/element/types";
 
 import { LanguageList } from "../app-language/LanguageList";
 import { isExcalidrawPlusSignedUser } from "../app_constants";
+import { PAGES_TAB } from "../pages/pagesUtils";
 
 import { saveDebugState } from "./DebugCanvas";
+
+const PagesMenuItem = () => {
+  const excalidrawAPI = useExcalidrawAPI();
+  return (
+    <MainMenu.Item
+      icon={copyIcon}
+      onSelect={() => {
+        excalidrawAPI?.updateScene({
+          appState: {
+            openSidebar: { name: DEFAULT_SIDEBAR.name, tab: PAGES_TAB },
+          },
+        });
+      }}
+    >
+      Pages
+    </MainMenu.Item>
+  );
+};
 
 export const AppMainMenu: React.FC<{
   onCollabDialogOpen: () => any;
@@ -30,6 +50,7 @@ export const AppMainMenu: React.FC<{
       <MainMenu.DefaultItems.SaveToActiveFile />
       <MainMenu.DefaultItems.Export />
       <MainMenu.DefaultItems.SaveAsImage />
+      <PagesMenuItem />
       {props.isCollabEnabled && (
         <MainMenu.DefaultItems.LiveCollaborationTrigger
           isCollaborating={props.isCollaborating}

@@ -1,10 +1,14 @@
 import { DefaultSidebar, Sidebar, THEME } from "@excalidraw/excalidraw";
 import {
+  copyIcon,
   messageCircleIcon,
   presentationIcon,
 } from "@excalidraw/excalidraw/components/icons";
 import { LinkButton } from "@excalidraw/excalidraw/components/LinkButton";
 import { useUIAppState } from "@excalidraw/excalidraw/context/ui-appState";
+
+import { PAGES_TAB } from "../pages/pagesUtils";
+import { PagesTab } from "../pages/PagesTab";
 
 import "./AppSidebar.scss";
 
@@ -72,6 +76,12 @@ export const AppSidebar = () => {
     <DefaultSidebar>
       <DefaultSidebar.TabTriggers>
         <Sidebar.TabTrigger
+          tab={PAGES_TAB}
+          style={{ opacity: openSidebar?.tab === PAGES_TAB ? 1 : 0.4 }}
+        >
+          {copyIcon}
+        </Sidebar.TabTrigger>
+        <Sidebar.TabTrigger
           tab="comments"
           style={{ opacity: openSidebar?.tab === "comments" ? 1 : 0.4 }}
         >
@@ -84,6 +94,9 @@ export const AppSidebar = () => {
           {presentationIcon}
         </Sidebar.TabTrigger>
       </DefaultSidebar.TabTriggers>
+      <Sidebar.Tab tab={PAGES_TAB} className="px-3">
+        <PagesTab />
+      </Sidebar.Tab>
       <Sidebar.Tab tab="comments">
         <div className="app-sidebar-promo-container">
           <div
